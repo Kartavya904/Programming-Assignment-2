@@ -1,84 +1,126 @@
 import socket
-import json
+import threading
+import sys
 
-HOST = '127.0.0.1'
-PORT = 65432
+# Connection configuration
+SERVER_ADDRESS = '127.0.0.1'
+SERVER_PORT = 404
+
+# Command list
+VALID_COMMANDS = {
+    "!register",
+    "!send",
+    "!retrieve",
+    "!active",
+    "!rooms",
+    "!joinroom",
+    "!roommsg",
+    "!roomretrieve",
+    "!roomusers",
+    "!leaveroom",
+    "!quit",
+    "!help",
+}
+
+client_socket = None
 
 
-def send_command(client, command):
-    """Sends a command to the server and receives the response."""
-    client.send(json.dumps(command).encode())
-    response = client.recv(1024).decode()
-    return json.loads(response)
-
-
-def display_menu():
-    """Displays the command menu."""
-    print("\n=== Bulletin Board Commands ===")
-    print("1. Post a message")
-    print("2. View active users")
-    print("3. Fetch a message by ID")
-    print("4. Leave the board")
-    print("5. View groups")
-    print("6. Join a group")
-    print("7. Post in a group")
-    print("0. Exit")
-
-
-def client_program():
-    """Runs the client program."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
-        client.connect((HOST, PORT))
-        print("Connected to the Bulletin Board.")
-
-        username = input("Enter your username: ")
-        response = send_command(client, {"command": "connect", "username": username})
-        if response.get("status") == "error":
-            print(response.get("message"))
-            return
-
-        while True:
-            display_menu()
-            choice = input("Select an option: ")
-
-            if choice == "1":
-                subject = input("Enter message subject: ")
-                body = input("Enter message body: ")
-                response = send_command(client, {"command": "post", "subject": subject, "body": body})
-
-            elif choice == "2":
-                response = send_command(client, {"command": "users"})
-
-            elif choice == "3":
-                message_id = int(input("Enter message ID: "))
-                response = send_command(client, {"command": "message", "id": message_id})
-
-            elif choice == "4":
-                response = send_command(client, {"command": "leave"})
-                print(response.get("message"))
-                break
-
-            elif choice == "5":
-                response = send_command(client, {"command": "groups"})
-
-            elif choice == "6":
-                group_name = input("Enter group name: ")
-                response = send_command(client, {"command": "groupjoin", "group": group_name})
-
-            elif choice == "7":
-                group_name = input("Enter group name: ")
-                subject = input("Enter message subject: ")
-                body = input("Enter message body: ")
-                response = send_command(client, {"command": "grouppost", "group": group_name, "subject": subject, "body": body})
-
-            elif choice == "0":
-                print("Exiting...")
-                break
+def listen_for_responses(sock):
+    """Continuously listen for messages from the server."""
+    while True:
+        try:
+            server_response = sock.recv(1024).decode()
+            if server_response:
+                print(server_response, end="")
             else:
-                print("Invalid option.")
+                print("Connection to server closed.")
+                sock.close()
+                break
+        except Exception as e:
+            print(f"Error receiving data: {e}")
+            sock.close()
+            break
 
-            print("Server Response:", response)
+
+def main():
+    global client_socket
+    print("Welcome to the Interactive Bulletin Board Terminal Client!")
+    print("Use '!help' to see available commands.")
+
+    while True:
+        user_input = input().strip()
+        if not user_input:
+            continue
+
+        args = user_input.split()
+        command = args[0]
+
+        if command not in VALID_COMMANDS:
+            print(f"Unknown command: {command}. Use '!help' for a list of valid commands.")
+            continue
+
+        if command == "!register" and len(args) != 2:
+            print("Usage: !register [username]")
+            continue
+
+        if command == "!send" and len(args) < 2:
+            print("Usage: !send [message]")
+            continue
+
+        if command == "!retrieve" and len(args) != 2:
+            print("Usage: !retrieve [id]")
+            continue
+
+        if command == "!joinroom" and len(args) != 2:
+            print("Usage: !joinroom [room]")
+            continue
+
+        if command == "!roommsg" and len(args) < 3:
+            print("Usage: !roommsg [room] [message]")
+            continue
+
+        if command == "!roomretrieve" and len(args) != 3:
+            print("Usage: !roomretrieve [room] [id]")
+            continue
+
+        if command == "!roomusers" and len(args) != 2:
+            print("Usage: !roomusers [room]")
+            continue
+
+        if command == "!leaveroom" and len(args) != 2:
+            print("Usage: !leaveroom [room]")
+            continue
+
+        # Connect to the server
+        if command == "!help":
+            print("""Available Commands:\n!register [username]: Join the server.\n!send [message]: Post a public message.\n!retrieve [id]: Get a public message by ID.\n!active: List active users.\n!rooms: Show available chat rooms.\n!joinroom [room]: Join a chat room.\n!roommsg [room] [message]: Send a message to a chat room.\n!roomretrieve [room] [id]: Retrieve a message from a chat room.\n!roomusers [room]: List chat room users.\n!leaveroom [room]: Leave a chat room.\n!quit: Disconnect from the server.""")
+            continue
+
+        if command == "!quit":
+            if client_socket:
+                client_socket.sendall(command.encode())
+                client_socket.close()
+            print("Disconnected from server.")
+            break
+
+        if not client_socket:
+            try:
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client_socket.connect((SERVER_ADDRESS, SERVER_PORT))
+                print(f"Connected to server at {SERVER_ADDRESS}:{SERVER_PORT}")
+                threading.Thread(target=listen_for_responses, args=(client_socket,), daemon=True).start()
+            except Exception as e:
+                print(f"Failed to connect to server: {e}")
+                sys.exit()
+
+        try:
+            client_socket.sendall(user_input.encode())
+        except Exception as e:
+            print(f"Error sending data: {e}")
+            client_socket.close()
+            client_socket = None
+            break
 
 
 if __name__ == "__main__":
-    client_program()
+    main()
