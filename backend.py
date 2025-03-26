@@ -8,6 +8,7 @@ SERVER_PORT = 404
 
 # Storage for active connections and messages
 connected_users = {}
+
 message_board = []
 chat_rooms = {f"Room{i + 1}": {"participants": {}, "logs": []} for i in range(5)}
 
@@ -131,7 +132,7 @@ def list_active_users(tokens, user_id, user_conn):
 def show_rooms(tokens, user_id, user_conn):
     room_list = "\n".join(chat_rooms.keys())
     return f"Available Rooms:\n{room_list}\n", user_id
-
+    
 def join_room(tokens, user_id, user_conn):
     if len(tokens) != 2:
         return "Usage: !joinroom [room]\n", user_id
@@ -139,6 +140,13 @@ def join_room(tokens, user_id, user_conn):
     with thread_lock:
         if room_name in chat_rooms:
             chat_rooms[room_name]["participants"][user_id] = user_conn
+            join_message = f"{user_id} has joined {room_name}.\n"
+            for member_conn in chat_rooms[room_name]["participants"].values():
+                if member_conn != user_conn:  # Avoid sending to the user themselves
+                    try:
+                        member_conn.sendall(join_message.encode())
+                    except:
+                        pass
             return f"You joined {room_name}.\n", user_id
         return "Room does not exist.\n", user_id
 
@@ -184,13 +192,21 @@ def room_user_list(tokens, user_id, user_conn):
             participants = "\n".join(chat_rooms[room_name]["participants"].keys())
             return f"Participants in {room_name}:\n{participants}\n", user_id
         return "Room does not exist or you are not a participant.\n", user_id
-
+    
 def exit_room(tokens, user_id, user_conn):
     if len(tokens) != 2:
         return "Usage: !leaveroom [room]\n", user_id
     room_name = tokens[1]
     with thread_lock:
         if room_name in chat_rooms and user_id in chat_rooms[room_name]["participants"]:
+            leave_message = f"{user_id} has left {room_name}.\n"
+            for member_conn in chat_rooms[room_name]["participants"].values():
+                if member_conn != user_conn:
+                    try:
+                        member_conn.sendall(leave_message.encode())
+                    except:
+                        pass
+            # Remove the user from the room
             chat_rooms[room_name]["participants"].pop(user_id)
             return f"You left {room_name}.\n", user_id
         return "Room does not exist or you are not a participant.\n", user_id
